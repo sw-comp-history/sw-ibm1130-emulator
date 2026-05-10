@@ -5,7 +5,7 @@
 //! is the program counter. Carry and Overflow are sticky condition
 //! flags maintained by arith ops; BSC reads them.
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CpuState {
     pub acc: u16,
     pub ext: u16,
@@ -19,6 +19,11 @@ pub struct CpuState {
     /// Instruction count -- useful for guarding against runaway
     /// programs in tests.
     pub instr_count: u64,
+    /// Bytes written to the 1054/console Selectric printer via
+    /// XIO. Each byte represents one typed character; this lets
+    /// tests inspect what a program "printed" without simulating
+    /// the device's electromechanical timing.
+    pub console_output: Vec<u8>,
 }
 
 impl CpuState {

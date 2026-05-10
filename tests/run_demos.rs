@@ -65,3 +65,11 @@ fn strings_demo_copies_until_sentinel() {
     assert_eq!(mem.read_word(dst_addr + 2), 0x004A);
     assert_eq!(mem.read_word(len_addr), 3);
 }
+
+#[test]
+fn hello_world_demo_prints_to_console() {
+    let src = include_str!("programs/hello.asm");
+    let (state, _mem, _symbols) = run_program(src);
+    let printed = String::from_utf8(state.console_output).expect("ASCII");
+    assert_eq!(printed, "HELLO, WORLD!\n");
+}

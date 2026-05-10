@@ -326,12 +326,7 @@ fn exec_with_address<S: FormShape>(
             state.halted = true;
             Ok(())
         }
-        Opcode::ExecuteInputOutput => {
-            // I/O is out of scope for step 11; treat as no-op so
-            // programs containing it don't crash. A real impl
-            // would dispatch to a device subsystem.
-            Ok(())
-        }
+        Opcode::ExecuteInputOutput => exec_xio(state, mem, tag, address, indirect),
     }
 }
 
@@ -401,6 +396,69 @@ fn exec_mdx<S: FormShape>(
         && let Ok((_, size)) = mem.decode_at(state.iar)
     {
         state.iar = state.iar.wrapping_add(size);
+    }
+    Ok(())
+}
+
+/// Area codes for our minimal device subsystem. The historical 1130
+/// FC manual assigns specific values per device; these are
+/// pedagogical choices for the bring-up demos and may shift when a
+/// real I/O subsystem lands.
+pub mod area {
+    /// 1054 / console Selectric printer (the operator typewriter
+    /// integrated into the 1131 CPU). Area code 1 in this emulator.
+    pub const CONSOLE: u8 = 1;
+}
+
+/// Function codes embedded in the IOCC's second word, top 3 bits of
+/// byte 0 (positions 5..7 of the 16-bit big-endian word).
+pub mod func {
+    pub const WRITE: u8 = 0;
+    pub const _READ: u8 = 1;
+    pub const _SENSE_INTERRUPT: u8 = 2;
+    pub const _CONTROL: u8 = 3;
+    pub const _SENSE_DEVICE: u8 = 4;
+    pub const _INIT_WRITE: u8 = 5;
+    pub const _INIT_READ: u8 = 6;
+}
+
+/// XIO: Execute Input/Output.
+///
+/// The address operand points to a 2-word IOCC (I/O Control
+/// Command):
+///
+/// ```text
+/// IOCC + 0:  data address (or immediate, depending on function)
+/// IOCC + 1:  high byte = (area_code << 3) | function
+///            low  byte = device-specific modifier
+/// ```
+///
+/// For now this emulator handles only `area = CONSOLE`,
+/// `function = WRITE`: read one byte from `mem[IOCC+0]` and append
+/// it to `state.console_output`. All other (area, function) pairs
+/// are silently no-op so codegen / asm output that references XIO
+/// in an unhandled way still runs.
+fn exec_xio(
+    state: &mut CpuState,
+    mem: &Memory,
+    tag: u8,
+    address: u16,
+    indirect: bool,
+) -> Result<(), ExecError> {
+    let iocc_addr = destination_address(state, mem, tag, address, indirect);
+    let data_addr = mem.read_word(iocc_addr);
+    let control = mem.read_word(iocc_addr.wrapping_add(1));
+    let high = (control >> 8) as u8;
+    let area = (high >> 3) & 0x1F;
+    let function = high & 0x07;
+    if area == area::CONSOLE && function == func::WRITE {
+        // Take the low byte of the data word as the character to
+        // type. (Real 1130 console output is one EBCDIC byte per
+        // call; for the bring-up demos we use ASCII literals and
+        // postpone the EBCDIC translation to its dedicated saga --
+        // see gen-isa/docs/character-encoding-plan.md.)
+        let byte = (mem.read_word(data_addr) & 0xFF) as u8;
+        state.console_output.push(byte);
     }
     Ok(())
 }
