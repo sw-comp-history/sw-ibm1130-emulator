@@ -28,12 +28,15 @@ fn math_demo_computes_5_plus_3_times_4() {
     let src = include_str!("programs/math.asm");
     let (_state, mem, symbols) = run_program(src);
     let result_addr = symbols.lookup("RESULT").unwrap() as u16;
-    // M produces (ACC, EXT) = product. For 8 * 4 = 32 the product
-    // fits in 16 bits, so the high half (ACC, stored to RESULT) is 0
-    // and the low half is in EXT. Assert on EXT instead.
-    assert_eq!(_state.ext, 32, "8 * 4 should be 32 in EXT");
-    // RESULT holds the high half (ACC), which is 0 for this case.
-    assert_eq!(mem.read_word(result_addr), 0);
+    // STD writes the 32-bit product across two words: RESULT = ACC
+    // (high half, = 0 for this small product), RESULT+1 = EXT (low
+    // half, = 32).
+    let high = mem.read_word(result_addr);
+    let low = mem.read_word(result_addr + 1);
+    let combined = ((high as u32) << 16) | (low as u32);
+    assert_eq!(high, 0, "high word of (5+3)*4 should be 0");
+    assert_eq!(low, 32, "low word of (5+3)*4 should be 32");
+    assert_eq!(combined, 32);
 }
 
 #[test]
