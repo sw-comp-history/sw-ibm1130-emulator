@@ -1,34 +1,39 @@
 //! Instruction execution: one `step()` per instruction.
 //!
-//! BSC condition mask semantics (chosen for this emulator; pinned
-//! here authoritatively per saga step 11):
+//! BSC / BSI condition mask semantics (saga step 3 of forth-on-1130
+//! aligned the bit assignments with Moore's authoritative 1968
+//! FORTH listing; sw-ibm1130-isa's spec was updated to expose the
+//! mask field, closing the postmortem-Sec-4 gap).
 //!
 //! ```text
 //! mask bit | meaning when set
 //! ---------+-----------------------------------------------------
-//! 0x01     | Z   -- ACC == 0
-//! 0x02     | -   -- ACC < 0 (two's-complement)
-//! 0x04     | +   -- ACC > 0
-//! 0x08     | E   -- ACC even (low bit clear)
-//! 0x10     | C   -- carry indicator set
-//! 0x20     | O   -- overflow indicator set
+//! 0x04     | E   -- ACC even (low bit clear)
+//! 0x08     | +   -- ACC > 0
+//! 0x10     | -   -- ACC < 0 (two's-complement)
+//! 0x20     | Z   -- ACC == 0
+//! 0x40     | C   -- carry indicator set
 //! ```
+//!
+//! Bits 0x01, 0x02, and 0x80 are unused. Bit assignments follow
+//! Moore's FORTH-listing constants (`:EVEN 04`, `:POSITIVE 8`,
+//! `:NEGATIVE 10`, `:EQUAL 20`).
 //!
 //! **BSC short** (`BSC mask`): tests the displacement byte as the
 //! mask. If any masked condition matches, **skip** the next
 //! instruction (advance IAR by that instruction's word size).
 //! Mask = 0 means no condition tested -> never skip.
 //!
-//! **BSC long** (`BSC L target [, mask]`): always-unconditional
-//! branch to `target` in this emulator. The historical 1130 also
-//! supported a mask in the long form's reserved bits, but the ISA
-//! spec at saga step 7 marked those bits as reserved-zero; the
-//! `mask` operand the asm accepts is parsed but currently dropped
-//! (acknowledged limitation, postmortem item for step 12).
+//! **BSC long** (`BSC L target [, mask]`): branches to `target` if
+//! `mask == 0` (the "always" case) or if any masked condition
+//! holds. Otherwise falls through. This is the natural mapping
+//! for `B` (mask=0 -> always), `BZ` (mask=0x20 -> if Z), `BN`
+//! (mask=0x10 -> if N), etc.
 //!
-//! Conditional branch idiom on this emulator: `BSC mask` (skip on
-//! condition) followed by `BSC L target, 0` (unconditional jump).
-//! The combination effects "branch unless condition matched".
+//! **BSI long** (`BSI L target [, mask]`): same condition logic as
+//! BSC long, but on "take" performs a subroutine call (writes IAR
+//! into target, sets IAR = target+1). Used by Moore's
+//! `:CONDITION` family to thread conditional calls through NEXT.
 //!
 //! ACC sign is tested in **two's-complement** terms (the natural
 //! interpretation; the historical 1130 used sign-magnitude, which
@@ -69,8 +74,9 @@ pub fn step(state: &mut CpuState, mem: &mut Memory) -> Result<(), ExecError> {
             op,
             tag,
             indirect,
+            mask,
             address,
-        } => exec_long(state, mem, op, tag, indirect, address),
+        } => exec_long(state, mem, op, tag, indirect, mask, address),
     }
 }
 
@@ -138,17 +144,25 @@ fn exec_long(
     op: Opcode,
     tag: u8,
     indirect: bool,
+    mask: u8,
     address: u16,
 ) -> Result<(), ExecError> {
-    exec_with_address(state, mem, op, tag, indirect, address, LongShape)
+    exec_with_address(state, mem, op, tag, indirect, address, LongShape { mask })
 }
 
 #[derive(Copy, Clone)]
-struct LongShape;
+struct LongShape {
+    mask: u8,
+}
 
 trait FormShape: Copy {
     fn is_long(self) -> bool;
     fn short_disp(self) -> i8;
+    /// Condition mask, for long-form BSC / BSI. Returns 0 for short
+    /// form (which carries no mask of its own; the short form's
+    /// `disp` byte IS the mask -- callers use `short_disp()` to
+    /// read it).
+    fn long_mask(self) -> u8;
 }
 
 impl FormShape for ShortShape {
@@ -158,6 +172,9 @@ impl FormShape for ShortShape {
     fn short_disp(self) -> i8 {
         self.disp
     }
+    fn long_mask(self) -> u8 {
+        0
+    }
 }
 
 impl FormShape for LongShape {
@@ -166,6 +183,9 @@ impl FormShape for LongShape {
     }
     fn short_disp(self) -> i8 {
         0
+    }
+    fn long_mask(self) -> u8 {
+        self.mask
     }
 }
 
@@ -315,10 +335,16 @@ fn exec_with_address<S: FormShape>(
         }
         Opcode::BranchSkipCondition => exec_bsc(state, mem, tag, indirect, address, shape),
         Opcode::BranchStore => {
-            // BSI: write IAR to target, branch to target+1.
-            let target = destination_address(state, mem, tag, address, indirect);
-            mem.write_word(target, state.iar);
-            state.iar = target.wrapping_add(1);
+            // BSI: same condition semantics as BSC long. If the
+            // condition test passes (mask == 0 OR any masked
+            // condition matches), perform the call: write IAR to
+            // target, set IAR = target+1. Otherwise fall through.
+            let mask = shape.long_mask();
+            if mask == 0 || condition_matches(state, mask) {
+                let target = destination_address(state, mem, tag, address, indirect);
+                mem.write_word(target, state.iar);
+                state.iar = target.wrapping_add(1);
+            }
             Ok(())
         }
         Opcode::ModifyIndex => exec_mdx(state, mem, tag, indirect, address, shape),
@@ -339,12 +365,13 @@ fn exec_bsc<S: FormShape>(
     shape: S,
 ) -> Result<(), ExecError> {
     if shape.is_long() {
-        // Long form: unconditional branch in this emulator (mask
-        // bits in the historical first-word reserved area aren't
-        // exposed by our ISA spec; documented in module-level docs
-        // and as a step-12 postmortem item).
-        let target = destination_address(state, mem, tag, address, indirect);
-        state.iar = target;
+        let mask = shape.long_mask();
+        // mask == 0 => always branch; mask != 0 => branch if any
+        // masked condition holds.
+        if mask == 0 || condition_matches(state, mask) {
+            let target = destination_address(state, mem, tag, address, indirect);
+            state.iar = target;
+        }
     } else {
         let mask = shape.short_disp() as u8;
         if condition_matches(state, mask) {
@@ -468,23 +495,20 @@ fn condition_matches(state: &CpuState, mask: u8) -> bool {
         return false;
     }
     let acc = state.acc as i16;
-    if mask & 0x01 != 0 && acc == 0 {
-        return true;
+    if mask & 0x04 != 0 && (acc & 1) == 0 {
+        return true; // E
     }
-    if mask & 0x02 != 0 && acc < 0 {
-        return true;
+    if mask & 0x08 != 0 && acc > 0 {
+        return true; // +
     }
-    if mask & 0x04 != 0 && acc > 0 {
-        return true;
+    if mask & 0x10 != 0 && acc < 0 {
+        return true; // -
     }
-    if mask & 0x08 != 0 && (acc & 1) == 0 {
-        return true;
+    if mask & 0x20 != 0 && acc == 0 {
+        return true; // Z
     }
-    if mask & 0x10 != 0 && state.carry {
-        return true;
-    }
-    if mask & 0x20 != 0 && state.overflow {
-        return true;
+    if mask & 0x40 != 0 && state.carry {
+        return true; // C
     }
     false
 }

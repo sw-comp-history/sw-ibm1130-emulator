@@ -1,21 +1,12 @@
 ; Demo: counted loop
 ;
-; Computes 1+2+...+10 = 55 by iterating. Demonstrates LD, STO, A,
-; S, BSC short (skip-on-condition), and BSC L unconditional jump.
+; Computes 1+2+...+10 = 55 by iterating. Uses a direct masked
+; BSC long form: `BSC L LOOP, 0x18` branches back to LOOP if ACC is
+; positive (0x08) or negative (0x10) -- i.e. non-zero. When ACC
+; reaches 0, fall through to store RESULT and halt.
 ;
-; Conditional branching idiom on the 1130 has TWO instructions:
-;   BSC mask           ; skip next instr if condition matches
-;   BSC L target, 0    ; unconditional jump (mask=0)
-; Combined: "branch unless condition matches" (== conditional jump).
-;
-; Strategy:
-;   SUM <- 0;  I <- 10
-;   loop:
-;     SUM <- SUM + I
-;     I <- I - 1
-;     if I == 0 break              ; encoded as: skip-if-NZ; jump
-;     goto loop
-;   RESULT <- SUM
+; Mask bit assignments (per Moore's 1968 :EVEN/:POSITIVE/:NEGATIVE/
+; :EQUAL constants): 0x04=E, 0x08=+, 0x10=-, 0x20=Z, 0x40=C.
 
         LD   L ZERO
         STO  L SUM           ; SUM = 0
@@ -27,8 +18,7 @@ LOOP:   LD   L SUM
         LD   L I
         S    L ONE
         STO  L I             ; I <- I - 1
-        BSC  0x01            ; skip next if ACC == 0 (loop done)
-        BSC  L LOOP, 0       ; otherwise jump back
+        BSC  L LOOP, 0x18    ; branch if + or - (ACC != 0)
         LD   L SUM
         STO  L RESULT
         WAIT

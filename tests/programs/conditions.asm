@@ -1,25 +1,19 @@
 ; Demo: conditional branching (max of two values)
 ;
-; Computes max(A, B) and stores it. Demonstrates the 1130 idiom
-; for conditional branches: BSC short (skip-on-cond) followed by
-; BSC L unconditional. Inputs A=12, B=17; expected RESULT=17.
+; Computes max(A, B) using a direct masked BSC long form.
+; With A=12 and B=17, RESULT should be 17.
 ;
-; Strategy:
-;   ACC <- A - B
-;   if ACC < 0 (A < B): branch to STORE_B
-;     == "skip-if-NOT-negative; jump-to-STORE_B"
-;     mask 0x3D = Z|+|E|C|O (everything except '-')
-;   STORE_A: RESULT <- A
-;   END: WAIT
-;
-; STORE_B: RESULT <- B; jump to END
+; The 1130 conditional-branch encoding (per Moore's 1968 listing):
+;   0x04 = Even, 0x08 = Positive, 0x10 = Negative, 0x20 = Zero,
+;   0x40 = Carry.
+; BSC L target, mask  branches if mask == 0 OR any masked
+; condition holds. So `BSC L STORE_B, 0x10` = branch if ACC < 0.
 
         LD   L A
         S    L B             ; ACC = A - B
-        BSC  0x05            ; skip next if ACC == 0 or ACC > 0 (A >= B)
-        BSC  L STORE_B, 0    ; A < B -> branch
+        BSC  L STORE_B, 0x10 ; branch if N (ACC < 0, i.e. A < B)
         LD   L A             ; A >= B -> result = A
-        BSC  L END, 0        ; jump to END
+        BSC  L END, 0        ; unconditional jump
 STORE_B:
         LD   L B             ; result = B
 END:    STO  L RESULT

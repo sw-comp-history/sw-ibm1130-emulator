@@ -1,36 +1,31 @@
 ; Demo: copy a "string" word-by-word until a sentinel
 ;
-; The 1130 has no character type; "strings" are sequences of
-; words. This demo copies words from SRC to DST until it sees
-; the sentinel 0xFFFF, demonstrating LDX, indexed LD/STO via XR1,
-; and the standard skip+jump conditional-branch idiom.
+; Copies words from SRC to DST until the sentinel 0xFFFF. Uses
+; LDX, indexed LD/STO via XR1, MDX to increment XR1, and a direct
+; masked BSC long form: `BSC L END, 0x20` = branch if Z (ACC == 0,
+; i.e. sentinel matched after subtracting it).
 ;
-; SRC contents are three arbitrary 16-bit words plus a sentinel.
-; The values 0x0048/0x0049/0x004A happen to spell "HIJ" in ASCII,
-; but this demo treats them as opaque words. Historically, IBM
-; 1130 software running alongside System/360 hosts stored text in
-; EBCDIC, packed two bytes per word; 1130 device I/O used per-
-; device codes (Hollerith for cards, PTTC for paper tape, printer-
-; specific codes). We will add explicit encoding support in a
-; future saga -- see gen-isa/docs/character-encoding-plan.md.
+; Mask bit 0x20 = Z (ACC == 0) per Moore's 1968 :EQUAL constant.
 ;
-; After: DST holds 0x0048 0x0049 0x004A; LEN = 3.
+; The values 0x0048/0x0049/0x004A happen to spell "HIJ" if
+; interpreted as ASCII; this demo treats them as opaque words.
+; Encoding-pipeline plans live in
+; gen-isa/docs/character-encoding-plan.md.
 
         LD   L ZERO
         STO  L LEN           ; LEN = 0
         LDX  L 1, ZERO       ; XR1 = 0 (index into SRC/DST)
 
-LOOP:   LD   L 1, SRC        ; ACC = SRC[XR1]   (long form: absolute base)
+LOOP:   LD   L 1, SRC        ; ACC = SRC[XR1]
         S    L SENTINEL      ; ACC = SRC[XR1] - 0xFFFF
-        BSC  0x06            ; skip next if ACC NOT 0 (any of -/+ matches)
-        BSC  L END, 0        ; sentinel matched -> jump to END
+        BSC  L END, 0x20     ; branch to END if Z (sentinel matched)
         LD   L 1, SRC        ; reload (S clobbered ACC)
         STO  L 1, DST        ; DST[XR1] = ACC
         LD   L LEN
         A    L ONE
         STO  L LEN           ; LEN += 1
         MDX  1, 1            ; XR1 += 1
-        BSC  L LOOP, 0       ; jump back
+        BSC  L LOOP, 0       ; unconditional jump back
 
 END:    WAIT
 

@@ -32,6 +32,7 @@ fn load_long_form_reads_from_memory() {
             op: Opcode::Load,
             tag: 0,
             indirect: false,
+            mask: 0,
             address: 20,
         },
     );
@@ -51,6 +52,7 @@ fn add_long_form_accumulates() {
             op: Opcode::Add,
             tag: 0,
             indirect: false,
+            mask: 0,
             address: 20,
         },
     );
@@ -70,6 +72,7 @@ fn store_long_form_writes_acc() {
             op: Opcode::Store,
             tag: 0,
             indirect: false,
+            mask: 0,
             address: 30,
         },
     );
@@ -90,6 +93,7 @@ fn multiply_writes_pair_to_acc_ext() {
             op: Opcode::Multiply,
             tag: 0,
             indirect: false,
+            mask: 0,
             address: 20,
         },
     );
@@ -112,6 +116,7 @@ fn divide_yields_quotient_and_remainder() {
             op: Opcode::Divide,
             tag: 0,
             indirect: false,
+            mask: 0,
             address: 20,
         },
     );
@@ -135,6 +140,7 @@ fn divide_by_zero_errors() {
             op: Opcode::Divide,
             tag: 0,
             indirect: false,
+            mask: 0,
             address: 20,
         },
     );
@@ -172,6 +178,7 @@ fn bsi_writes_iar_and_jumps_to_target_plus_one() {
             op: Opcode::BranchStore,
             tag: 0,
             indirect: false,
+            mask: 0,
             address: 30,
         },
     );
@@ -193,6 +200,7 @@ fn bsc_long_unconditional_branches_when_mask_zero() {
             op: Opcode::BranchSkipCondition,
             tag: 0,
             indirect: false,
+            mask: 0,
             address: 50,
         },
     );
@@ -214,7 +222,7 @@ fn bsc_short_skips_when_z_matches_acc_zero() {
         Instruction::Short {
             op: Opcode::BranchSkipCondition,
             tag: 0,
-            disp: 0x01, // Z mask
+            disp: 0x20, // Z mask (Moore: 0x20 = ACC == 0)
         },
     );
     write_insn(
@@ -224,6 +232,7 @@ fn bsc_short_skips_when_z_matches_acc_zero() {
             op: Opcode::BranchSkipCondition,
             tag: 0,
             indirect: false,
+            mask: 0,
             address: 50,
         },
     );
@@ -244,7 +253,7 @@ fn bsc_short_falls_through_when_condition_does_not_match() {
         Instruction::Short {
             op: Opcode::BranchSkipCondition,
             tag: 0,
-            disp: 0x01, // Z mask
+            disp: 0x20, // Z mask (Moore: 0x20 = ACC == 0)
         },
     );
     write_insn(
@@ -254,6 +263,7 @@ fn bsc_short_falls_through_when_condition_does_not_match() {
             op: Opcode::BranchSkipCondition,
             tag: 0,
             indirect: false,
+            mask: 0,
             address: 50,
         },
     );
@@ -318,6 +328,7 @@ fn and_or_xor() {
                 op,
                 tag: 0,
                 indirect: false,
+                mask: 0,
                 address: 20,
             },
         );

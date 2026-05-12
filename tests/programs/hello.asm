@@ -24,17 +24,14 @@
 ;             For area=1 (console) and function=0 (WRITE), the high
 ;             byte = 0x08 -> word value 0x0800.
 
-        LDX  L 1, ZERO          ; XR1 = 0  (offset into MSG)
+        LDX  L 1, ZERO              ; XR1 = 0  (offset into MSG)
 
-LOOP:   LD   L 1, MSG           ; ACC = MSG[XR1]
-        BSC  0x01               ; skip next instr if ACC == 0 (sentinel hit)
-        BSC  L EMIT, 0          ; otherwise jump to the per-char emit block
-        BSC  L END_OF_PROGRAM, 0 ; ACC == 0 -> jump to halt
-
-EMIT:   STO  L IOCC_DATA        ; place the char byte in the IOCC's data slot
-        XIO  L IOCC             ; type the byte on the console printer
-        MDX  1, 1               ; XR1 += 1
-        BSC  L LOOP, 0          ; loop back
+LOOP:   LD   L 1, MSG               ; ACC = MSG[XR1]
+        BSC  L END_OF_PROGRAM, 0x20 ; branch to halt if Z (null terminator)
+        STO  L IOCC_DATA            ; place the char byte in the IOCC's data slot
+        XIO  L IOCC                 ; type the byte on the console printer
+        MDX  1, 1                   ; XR1 += 1
+        BSC  L LOOP, 0              ; loop back
 
 END_OF_PROGRAM:
         WAIT
