@@ -222,11 +222,23 @@ fn exec_with_address<S: FormShape>(
             Ok(())
         }
         Opcode::LoadIndex => {
-            // LDX loads an index register from address. Tag selects
-            // which XR (1..=3); tag 0 with LDX historically loaded
-            // an immediate, but our codegen never emits that shape
-            // and we treat tag 0 as a no-op load into "no XR".
-            let v = mem.read_word(effective_address(state, 0, address));
+            // LDX loads an index register. The operand is taken
+            // *immediately* (no fetch) for short form and for long
+            // form without the indirect bit; indirect long form
+            // fetches once.
+            //
+            //   short form:    XR[tag] = sign-extended disp byte
+            //   long form, !I: XR[tag] = address (16-bit immediate)
+            //   long form, I:  XR[tag] = mem[address]
+            let v = if shape.is_long() {
+                if indirect {
+                    mem.read_word(address)
+                } else {
+                    address
+                }
+            } else {
+                shape.short_disp() as i16 as u16
+            };
             state.write_xr(tag, v);
             Ok(())
         }

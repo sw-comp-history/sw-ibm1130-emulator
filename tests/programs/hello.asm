@@ -24,7 +24,7 @@
 ;             For area=1 (console) and function=0 (WRITE), the high
 ;             byte = 0x08 -> word value 0x0800.
 
-        LDX  L 1, ZERO              ; XR1 = 0  (offset into MSG)
+        LDX  1, 0                   ; XR1 = 0  (short-form immediate, offset into MSG)
 
 LOOP:   LD   L 1, MSG               ; ACC = MSG[XR1]
         BSC  L END_OF_PROGRAM, 0x20 ; branch to halt if Z (null terminator)

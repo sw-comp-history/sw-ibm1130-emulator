@@ -14,7 +14,7 @@
 
         LD   L ZERO
         STO  L LEN           ; LEN = 0
-        LDX  L 1, ZERO       ; XR1 = 0 (index into SRC/DST)
+        LDX  1, 0            ; XR1 = 0 (short-form immediate)
 
 LOOP:   LD   L 1, SRC        ; ACC = SRC[XR1]
         S    L SENTINEL      ; ACC = SRC[XR1] - 0xFFFF
